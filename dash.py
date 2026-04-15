@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 # ─────────────────────────────────────────────
 DB_FILE = "qa_data.db"
 WEB_REPOS = ["BE Web", "FE Web",  "App FE", "App BE"]
-SQUADS = ["Squad B", "Squad A"]
+SQUADS = ["Web Squad", "App Squad"]
 WEB_ENVS = ["Test", "STG"]
 STATUS_OPTIONS = ["Completed", "In progress", "Blocked", "Scheduled", "N/A", "Ready for release"]
 
