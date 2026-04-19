@@ -526,9 +526,15 @@ else:
     # 3. PIPELINE
     st.divider()
     st.subheader("✏️ Pipeline")
+
+    # Add a "Select" checkbox column for manual row deletion
+    pipeline_df = df[['id'] + UI_COLUMN_ORDER].copy()
+    pipeline_df.insert(0, "Select", False)
+
     edited_df = st.data_editor(
-        df[['id'] + UI_COLUMN_ORDER],
+        pipeline_df,
         column_config={
+            "Select": st.column_config.CheckboxColumn("🗑️ Select", help="Check rows to delete", default=False),
             "id": None,
             "env": st.column_config.SelectboxColumn("Env", options=["None"] + WEB_ENVS),
             **{col: st.column_config.SelectboxColumn(STATUS_MAP[col], options=STATUS_OPTIONS) for col in STATUS_COLS},
@@ -538,26 +544,49 @@ else:
                 help="Set to Completed to archive this release."
             ),
         },
-        hide_index=True, width="stretch", key="pipeline_editor"
+        hide_index=True, width="stretch", key="pipeline_editor",
     )
 
-    if st.button("💾 Save All Changes", type="primary"):
-        edits = st.session_state.get("pipeline_editor", {}).get("edited_rows", {})
-        if edits:
-            conn = get_db_connection()
-            for row_idx, changes in edits.items():
-                db_id = int(df.iloc[int(row_idx)]['id'])
-                for field, value in changes.items():
-                    conn.execute(f"UPDATE deployments SET {field}=? WHERE id=?", (value, db_id))
-                # Archive ONLY if release_status was explicitly set to Completed in this save
-                if changes.get("release_status") == "Completed":
-                    conn.execute(
-                        "UPDATE deployments SET archived=1, archived_at=? WHERE id=?",
-                        (datetime.now().strftime("%Y-%m-%d %H:%M"), db_id)
-                    )
-            conn.commit()
-            conn.close()
-            st.rerun()
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("💾 Save All Changes", type="primary", use_container_width=True):
+            edits = st.session_state.get("pipeline_editor", {}).get("edited_rows", {})
+            if edits:
+                conn = get_db_connection()
+                for row_idx, changes in edits.items():
+                    # Skip the synthetic "Select" column — it's not a DB field
+                    db_changes = {k: v for k, v in changes.items() if k != "Select"}
+                    if not db_changes:
+                        continue
+                    db_id = int(df.iloc[int(row_idx)]['id'])
+                    for field, value in db_changes.items():
+                        conn.execute(f"UPDATE deployments SET {field}=? WHERE id=?", (value, db_id))
+                    # Archive ONLY if release_status was explicitly set to Completed in this save
+                    if db_changes.get("release_status") == "Completed":
+                        conn.execute(
+                            "UPDATE deployments SET archived=1, archived_at=? WHERE id=?",
+                            (datetime.now().strftime("%Y-%m-%d %H:%M"), db_id)
+                        )
+                conn.commit()
+                conn.close()
+                st.rerun()
+
+    with col2:
+        if st.button("🗑️ Delete Selected Rows", type="secondary", use_container_width=True):
+            # Rows where the "Select" checkbox is True
+            selected_rows = edited_df.index[edited_df["Select"] == True].tolist()
+            if selected_rows:
+                conn = get_db_connection()
+                for row_idx in selected_rows:
+                    db_id = int(df.iloc[int(row_idx)]['id'])
+                    conn.execute("DELETE FROM deployments WHERE id=?", (db_id,))
+                conn.commit()
+                conn.close()
+                st.success(f"✓ Deleted {len(selected_rows)} row(s)")
+                st.rerun()
+            else:
+                st.warning("⚠️ No rows selected for deletion. Tick the checkbox on the row(s) you want to remove.")
 
     # 4. BACKLOG
     st.divider()
